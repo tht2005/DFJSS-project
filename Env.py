@@ -1,7 +1,5 @@
 import numpy as np
 
-from statistics import mean
-
 # number of machines and jobs
 # all values must be greater than 0
 SET_M = [ 5, 10, 30 ]
@@ -53,7 +51,7 @@ class env:
             # relaxation factor
             f = np.random.uniform(U_RELAX_FACTOR[0], U_RELAX_FACTOR[1])
             # estimate time for operation j of job i to be done
-            est = [ mean(self.t[i][j]) for j in range(self.h[i]) ]
+            est = [ np.mean(self.t[i][j]) for j in range(self.h[i]) ]
             # total estimate time
             total_est = sum(est)
             self.D[i] = self.A[i] + f * total_est
@@ -73,17 +71,17 @@ class env:
         self.P_a = 0
 
     def calcU_m(self):
-        self.U_m = mean([ (self.total_worktime[i] / self.CT[i]) for i in range(self.m) ])
+        self.U_m = np.mean([ (self.total_worktime[i] / self.CT[i]) for i in range(self.m) ])
 
     def calcET_e(self):
-        T_cur = mean(self.CT)
+        T_cur = np.mean(self.CT)
         NJtard = 0
         NJearly = 0
         for i in range(self.n_total):
             if self.OP[i] < self.h[i]:
                 T_left = 0
                 for j in range(self.OP[i] + 1, self.h[i]):
-                    tij = mean(self.t[i][j])
+                    tij = np.mean(self.t[i][j])
                     T_left += tij
                     if T_cur + T_left > self.D[i]:
                         NJtard += 1
@@ -105,7 +103,7 @@ class env:
                     continue
                 else:
                     for j in range(self.OP[i] + 1, self.h[i]):
-                        tij = mean(self.t[i][j])
+                        tij = np.mean(self.t[i][j])
                         T_left += tij
                         if self.ET[i][self.OP[i]] + T_left > self.D[i]:
                             NJa_tard += 1
@@ -121,7 +119,7 @@ class env:
             if self.OP[i] < self.h[i]:
                 T_left = 0
                 for j in range(self.OP[i] + 1, self.h[i]):
-                    tij = mean(self.t[i][j])
+                    tij = np.mean(self.t[i][j])
                     T_left += tij
                 
                 if self.ET[i][self.OP[i]] > self.D[i]:
@@ -132,9 +130,8 @@ class env:
                     P2[i] = self.early_cost[i] * (self.D[i] - self.ET[i][self.OP[i]] - T_left) + 10
         self.P_a = sum(P) / sum(P2)
 
-
-    def makeAction(self, machine, job):
-        assert self.OP[job] < self.h[job], "MakeAction on a completed job"
+    def dispatch(self, machine, job):
+        assert self.OP[job] < self.h[job], "Dispatch a completed job"
 
         o = self.OP[job]
         
@@ -151,5 +148,36 @@ class env:
         self.calcET_a()
         self.calcP_a()
 
-        print(self.U_m, self.ET_e, self.ET_a, self.P_a)
+    def getState(self):
+        return np.array([ self.U_m, self.ET_e, self.ET_a, self.P_a ])
+
+    def makeAction(self, action):
+        UC = []
+        for i in range(self.n_total):
+            if self.OP[i] < self.h[i]:
+                UC.append(i)
+
+        machine = 0
+        job = 0
+        if action == 0:
+            job = UC[ np.argmin([ self.D[i] for i in UC ]) ]
+            o = self.OP[job]
+            machine = np.argmin([ (max([ self.CT[k], self.ET[job][o], self.A[job] ]) + self.t[job][o][k]) for k in range(self.m) ])
+        elif action == 1:
+            job = UC[ np.argmax([ sum([ np.mean(self.t[i][j]) for j in range(self.OP[i] + 1, self.h[i]) ]) for i in UC ]) ]
+            o = self.OP[job]
+            machine = np.argmin([ (max([ self.CT[k], self.ET[job][o], self.A[job] ]) + self.t[job][o][k]) for k in range(self.m) ])
+        elif action == 2:
+            job = UC[ np.argmin([ sum([ np.mean(self.t[i][j]) for j in range(self.OP[i] + 1, self.h[i]) ]) for i in UC ]) ]
+            o = self.OP[job]
+            machine = np.argmin([ (max([ self.CT[k], self.ET[job][o], self.A[job] ]) + self.t[job][o][k]) for k in range(self.m) ])
+        elif action == 3:
+            job = UC[ np.argmax([ (0.2 * self.early_cost[i] + 0.8 * self.tardy_cost[i]) for i in UC ]) ]
+            machine = np.argmin(self.total_worktime)
+        else:
+            assert False, "Invalid action id"
+
+        self.dispatch(machine, job)
+        # terminal-state
+        return len(UC) == 1 and self.OP[job] >= self.h[job]
 
